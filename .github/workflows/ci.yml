@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      # Configuration validation only: tests replace Mongo providers with mocks.
+      MONGO_URI: mongodb://127.0.0.1:1/datavault-ci-unreachable
+      JWT_SECRET: ci-only-placeholder-no-real-credential-1234567890
+      ACCOUNT_ACTIVATION_URL: https://client.example.test/auth/activate
+      EMPLOYEE_INVITATION_URL: https://client.example.test/invitations/accept
+      SMTP_HOST: smtp.example.test
+      SMTP_FROM: no-reply@example.test
+      STRIPE_ENABLED: 'false'
+      OPENROUTER_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run build
+      # Includes src/docs/swagger.spec.ts; no separate Swagger job is needed.
+      - run: npm test -- --runInBand --silent
+      - run: npm run test:e2e -- --runInBand --silent
+      - run: npm audit --audit-level=high
